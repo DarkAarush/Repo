@@ -6,9 +6,10 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "7183336129:AAGC7Cj0fXjMQzROUXMZHnb0pyXQQqneMic"
+TELEGRAM_BOT_TOKEN = "7183336129:AAGC7Cj0fXjMQzROUXMZHnb0pyXQQqneMic"  # Replace with your actual token
 
-# --- Heroku API helpers ---
+
+# Get Heroku apps using API key
 def get_heroku_apps(api_key):
     url = "https://api.heroku.com/apps"
     headers = {
@@ -19,6 +20,7 @@ def get_heroku_apps(api_key):
     response.raise_for_status()
     return response.json()
 
+# Clone and zip repo
 def clone_and_zip_repo(app_name):
     repo_url = f"https://git.heroku.com/{app_name}.git"
     temp_dir = tempfile.mkdtemp()
@@ -28,19 +30,23 @@ def clone_and_zip_repo(app_name):
     zip_path = shutil.make_archive(app_dir, 'zip', app_dir)
     return zip_path, temp_dir
 
-# --- Telegram Commands ---
+# /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
-        "👋 Welcome! I can help you download your Heroku apps.\n\n"
-        "Use these commands:\n"
-        "• /repos <HEROKU_API_KEY> — List all your apps\n"
-        "• /download <API_KEY> <APP_NAME> — Download a specific app\n"
-        "Or just send your API key to download all apps."
+    await context.bot.send_message(
+        chat_id=update.effective_chat.id,
+        text=(
+            "👋 Welcome! I can help you download your Heroku apps.\n\n"
+            "Use these commands:\n"
+            "• /repos <HEROKU_API_KEY> — List your apps\n"
+            "• /download <API_KEY> <APP_NAME> — Download a specific app\n"
+            "Or just send your API key to download all apps."
+        )
     )
 
+# /repos command
 async def repos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not context.args:
-        await update.message.reply_text("❗ Usage: /repos <HEROKU_API_KEY>")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❗ Usage: /repos <HEROKU_API_KEY>")
         return
 
     api_key = context.args[0]
@@ -48,60 +54,63 @@ async def repos(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         apps = get_heroku_apps(api_key)
         if not apps:
-            await update.message.reply_text("No apps found.")
+            await context.bot.send_message(chat_id=update.effective_chat.id, text="No apps found.")
             return
 
         app_names = "\n".join([f"• {app['name']}" for app in apps])
-        await update.message.reply_text(f"🗂 Your Heroku Apps:\n{app_names}")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"🗂 Your Heroku Apps:\n{app_names}")
     except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"Error: {str(e)}")
 
+# /download command
 async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if len(context.args) < 2:
-        await update.message.reply_text("❗ Usage: /download <HEROKU_API_KEY> <APP_NAME>")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text="❗ Usage: /download <HEROKU_API_KEY> <APP_NAME>")
         return
 
     api_key = context.args[0]
     app_name = context.args[1]
 
     try:
-        await update.message.reply_text(f"📦 Downloading {app_name}...")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📦 Downloading `{app_name}`...", parse_mode="Markdown")
         zip_file, temp_dir = clone_and_zip_repo(app_name)
         with open(zip_file, 'rb') as f:
-            await update.message.reply_document(document=f, filename=f"{app_name}.zip")
+            await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=f"{app_name}.zip")
         shutil.rmtree(temp_dir, ignore_errors=True)
     except subprocess.CalledProcessError:
-        await update.message.reply_text(f"❌ Failed to clone {app_name}. Make sure the app exists and you have access.")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Failed to clone `{app_name}`. Check access or app name.", parse_mode="Markdown")
     except Exception as e:
-        await update.message.reply_text(f"❌ Error: {str(e)}")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Error: {str(e)}")
 
+# Text message: Assume it's a Heroku API key
 async def handle_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_key = update.message.text.strip()
-    await update.message.reply_text("🔍 Fetching apps...")
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(chat_id=chat_id, text="🔍 Fetching apps...")
 
     try:
         apps = get_heroku_apps(api_key)
         if not apps:
-            await update.message.reply_text("No apps found.")
+            await context.bot.send_message(chat_id=chat_id, text="No apps found.")
             return
 
         for app in apps:
             name = app['name']
-            await update.message.reply_text(f"📦 Zipping: {name}")
+            await context.bot.send_message(chat_id=chat_id, text=f"📦 Zipping: `{name}`", parse_mode="Markdown")
             try:
                 zip_file, temp_dir = clone_and_zip_repo(name)
                 with open(zip_file, 'rb') as f:
-                    await update.message.reply_document(document=f, filename=f"{name}.zip")
+                    await context.bot.send_document(chat_id=chat_id, document=f, filename=f"{name}.zip")
             except Exception as e:
-                await update.message.reply_text(f"❌ Failed to clone {name}: {str(e)}")
+                await context.bot.send_message(chat_id=chat_id, text=f"❌ Failed to clone `{name}`: {str(e)}", parse_mode="Markdown")
             finally:
                 shutil.rmtree(temp_dir, ignore_errors=True)
 
-        await update.message.reply_text("✅ All apps processed.")
+        await context.bot.send_message(chat_id=chat_id, text="✅ All apps processed.")
     except Exception as e:
-        await update.message.reply_text(f"Error: {str(e)}")
+        await context.bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
 
-# --- Run bot ---
+# Start the bot
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
