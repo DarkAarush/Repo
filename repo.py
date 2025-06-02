@@ -7,7 +7,7 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "your_telegram_bot_token_here"  # Replace this with your Telegram bot token
+TELEGRAM_BOT_TOKEN = "7183336129:AAGC7Cj0fXjMQzROUXMZHnb0pyXQQqneMic"  # Replace this with your Telegram bot token
 
 
 # Fetch all Heroku apps
