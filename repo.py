@@ -1,3 +1,4 @@
+
 import os
 import shutil
 import subprocess
@@ -6,10 +7,10 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "7183336129:AAGC7Cj0fXjMQzROUXMZHnb0pyXQQqneMic"  # Replace with your actual token
+TELEGRAM_BOT_TOKEN = "your_telegram_bot_token_here"  # Replace this with your Telegram bot token
 
 
-# Get Heroku apps using API key
+# Fetch all Heroku apps
 def get_heroku_apps(api_key):
     url = "https://api.heroku.com/apps"
     headers = {
@@ -20,12 +21,13 @@ def get_heroku_apps(api_key):
     response.raise_for_status()
     return response.json()
 
-# Clone and zip repo
-def clone_and_zip_repo(app_name):
-    repo_url = f"https://git.heroku.com/{app_name}.git"
+# Clone a Heroku app repo and return the path to ZIP file
+def clone_and_zip_repo(app_name, api_key):
+    repo_url = f"https://heroku:{api_key}@git.heroku.com/{app_name}.git"
     temp_dir = tempfile.mkdtemp()
     app_dir = os.path.join(temp_dir, app_name)
 
+    # Clone repo with embedded API key
     subprocess.run(["git", "clone", repo_url, app_dir], check=True)
     zip_path = shutil.make_archive(app_dir, 'zip', app_dir)
     return zip_path, temp_dir
@@ -73,7 +75,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     try:
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📦 Downloading `{app_name}`...", parse_mode="Markdown")
-        zip_file, temp_dir = clone_and_zip_repo(app_name)
+        zip_file, temp_dir = clone_and_zip_repo(app_name, api_key)
         with open(zip_file, 'rb') as f:
             await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=f"{app_name}.zip")
         shutil.rmtree(temp_dir, ignore_errors=True)
@@ -82,7 +84,7 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Error: {str(e)}")
 
-# Text message: Assume it's a Heroku API key
+# Handle plain API key messages (download all apps)
 async def handle_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     api_key = update.message.text.strip()
     chat_id = update.effective_chat.id
@@ -98,7 +100,7 @@ async def handle_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
             name = app['name']
             await context.bot.send_message(chat_id=chat_id, text=f"📦 Zipping: `{name}`", parse_mode="Markdown")
             try:
-                zip_file, temp_dir = clone_and_zip_repo(name)
+                zip_file, temp_dir = clone_and_zip_repo(name, api_key)
                 with open(zip_file, 'rb') as f:
                     await context.bot.send_document(chat_id=chat_id, document=f, filename=f"{name}.zip")
             except Exception as e:
@@ -110,7 +112,7 @@ async def handle_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         await context.bot.send_message(chat_id=chat_id, text=f"Error: {str(e)}")
 
-# Start the bot
+# Main entry point
 def main():
     app = ApplicationBuilder().token(TELEGRAM_BOT_TOKEN).build()
 
