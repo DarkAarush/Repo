@@ -1,4 +1,3 @@
-
 import os
 import shutil
 import subprocess
@@ -7,8 +6,7 @@ import requests
 from telegram import Update
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-TELEGRAM_BOT_TOKEN = "7694420520:AAFUVzHmpcDValxWyWXku9gWG8J_qYXBtKA"  # Replace this with your Telegram bot token
-
+TELEGRAM_BOT_TOKEN = "7694420520:AAFUVzHmpcDValxWyWXku9gWG8J_qYXBtKA"  # Replace with your bot token
 
 # Fetch all Heroku apps
 def get_heroku_apps(api_key):
@@ -21,16 +19,24 @@ def get_heroku_apps(api_key):
     response.raise_for_status()
     return response.json()
 
-# Clone a Heroku app repo and return the path to ZIP file
-def clone_and_zip_repo(app_name, api_key):
+# Clone a Heroku app repo and return all file paths
+def clone_and_get_files(app_name, api_key):
     repo_url = f"https://heroku:{api_key}@git.heroku.com/{app_name}.git"
     temp_dir = tempfile.mkdtemp()
     app_dir = os.path.join(temp_dir, app_name)
 
-    # Clone repo with embedded API key
     subprocess.run(["git", "clone", repo_url, app_dir], check=True)
-    zip_path = shutil.make_archive(app_dir, 'zip', app_dir)
-    return zip_path, temp_dir
+
+    file_paths = []
+    for root, dirs, files in os.walk(app_dir):
+        if '.git' in dirs:
+            dirs.remove('.git')
+        for file in files:
+            if not file.startswith('.'):
+                full_path = os.path.join(root, file)
+                file_paths.append(full_path)
+
+    return file_paths, temp_dir
 
 # /start command
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -52,7 +58,6 @@ async def repos(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
 
     api_key = context.args[0]
-
     try:
         apps = get_heroku_apps(api_key)
         if not apps:
@@ -74,10 +79,18 @@ async def download(update: Update, context: ContextTypes.DEFAULT_TYPE):
     app_name = context.args[1]
 
     try:
-        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📦 Downloading `{app_name}`...", parse_mode="Markdown")
-        zip_file, temp_dir = clone_and_zip_repo(app_name, api_key)
-        with open(zip_file, 'rb') as f:
-            await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=f"{app_name}.zip")
+        await context.bot.send_message(chat_id=update.effective_chat.id, text=f"📦 Cloning `{app_name}`...", parse_mode="Markdown")
+        file_paths, temp_dir = clone_and_get_files(app_name, api_key)
+
+        if not file_paths:
+            await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❗ No files found in `{app_name}`.", parse_mode="Markdown")
+        else:
+            for file_path in file_paths[:20]:  # Limit to first 20 files
+                try:
+                    with open(file_path, 'rb') as f:
+                        await context.bot.send_document(chat_id=update.effective_chat.id, document=f, filename=os.path.basename(file_path))
+                except Exception as e:
+                    await context.bot.send_message(chat_id=update.effective_chat.id, text=f"⚠️ Failed to send `{file_path}`: {str(e)}", parse_mode="Markdown")
         shutil.rmtree(temp_dir, ignore_errors=True)
     except subprocess.CalledProcessError:
         await context.bot.send_message(chat_id=update.effective_chat.id, text=f"❌ Failed to clone `{app_name}`. Check access or app name.", parse_mode="Markdown")
@@ -98,11 +111,18 @@ async def handle_api_key(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
         for app in apps:
             name = app['name']
-            await context.bot.send_message(chat_id=chat_id, text=f"📦 Zipping: `{name}`", parse_mode="Markdown")
+            await context.bot.send_message(chat_id=chat_id, text=f"📦 Cloning `{name}`...", parse_mode="Markdown")
             try:
-                zip_file, temp_dir = clone_and_zip_repo(name, api_key)
-                with open(zip_file, 'rb') as f:
-                    await context.bot.send_document(chat_id=chat_id, document=f, filename=f"{name}.zip")
+                file_paths, temp_dir = clone_and_get_files(name, api_key)
+                if not file_paths:
+                    await context.bot.send_message(chat_id=chat_id, text=f"❗ No files in `{name}`", parse_mode="Markdown")
+                else:
+                    for file_path in file_paths[:20]:
+                        try:
+                            with open(file_path, 'rb') as f:
+                                await context.bot.send_document(chat_id=chat_id, document=f, filename=os.path.basename(file_path))
+                        except Exception as e:
+                            await context.bot.send_message(chat_id=chat_id, text=f"⚠️ Error sending `{file_path}`: {str(e)}", parse_mode="Markdown")
             except Exception as e:
                 await context.bot.send_message(chat_id=chat_id, text=f"❌ Failed to clone `{name}`: {str(e)}", parse_mode="Markdown")
             finally:
